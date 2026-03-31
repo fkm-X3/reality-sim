@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://reality-sim/schemas/agent_memory.schema.json",
+  "title": "AgentMemory",
+  "description": "Hybrid agent memory system with latent state and recent events",
+  "type": "object",
+  "required": ["agent_id", "latent_state", "recent_events", "stats"],
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the agent"
+    },
+    "latent_state": {
+      "type": "array",
+      "items": { "type": "number" },
+      "description": "Compressed neural embedding representing long-term 'wisdom'. Influences hidden state initialization when loaded."
+    },
+    "recent_events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/MemoryEvent" },
+      "description": "Sliding window of recent events for interpretability and debugging"
+    },
+    "max_events": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 100,
+      "description": "Maximum number of events to retain in sliding window"
+    },
+    "stats": {
+      "$ref": "#/$defs/MemoryStats"
+    }
+  },
+  "$defs": {
+    "MemoryEvent": {
+      "type": "object",
+      "required": ["tick", "action", "outcome", "reward"],
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Simulation tick when event occurred"
+        },
+        "action": {
+          "type": "string",
+          "enum": ["Rest", "Move", "Gather", "Communicate", "Aggress", "Flee", "Reproduce", "Build"],
+          "description": "Action type taken"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": ["Success", "Failure", "Neutral"],
+          "description": "Result of the action"
+        },
+        "reward": {
+          "type": "number",
+          "description": "Reward signal received (positive = good, negative = bad)"
+        }
+      }
+    },
+    "MemoryStats": {
+      "type": "object",
+      "description": "Lifetime statistics for evolutionary fitness scoring",
+      "properties": {
+        "survival_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total ticks survived"
+        },
+        "resources_gathered": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total resources collected"
+        },
+        "interactions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total interactions with other agents"
+        },
+        "offspring": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of offspring produced"
+        },
+        "successful_actions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of successful actions"
+        },
+        "failed_actions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of failed actions"
+        },
+        "total_reward": {
+          "type": "number",
+          "description": "Cumulative reward received"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+      "latent_state": [0.12, -0.34, 0.56, -0.78, 0.91],
+      "recent_events": [
+        { "tick": 1000, "action": "Gather", "outcome": "Success", "reward": 0.5 },
+        { "tick": 1001, "action": "Move", "outcome": "Neutral", "reward": -0.01 },
+        { "tick": 1002, "action": "Rest", "outcome": "Success", "reward": 0.05 }
+      ],
+      "max_events": 100,
+      "stats": {
+        "survival_ticks": 50000,
+        "resources_gathered": 1234,
+        "interactions": 567,
+        "offspring": 3,
+        "successful_actions": 45000,
+        "failed_actions": 5000,
+        "total_reward": 2345.67
+      }
+    }
+  ]
+}

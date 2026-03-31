@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://reality-sim/schemas/world_state.schema.json",
+  "title": "WorldState",
+  "description": "Global simulation world state",
+  "type": "object",
+  "required": ["tick", "current_year", "config", "era", "agents", "resources", "stats"],
+  "properties": {
+    "tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Current simulation tick"
+    },
+    "current_year": {
+      "type": "integer",
+      "description": "Current simulation year (negative = BCE)"
+    },
+    "config": {
+      "$ref": "#/$defs/WorldConfig"
+    },
+    "era": {
+      "type": "string",
+      "enum": ["Prehistoric", "Ancient", "Medieval", "Modern"],
+      "description": "Current historical era"
+    },
+    "agents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Agent" },
+      "description": "All agents in the simulation"
+    },
+    "resources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ResourceNode" },
+      "description": "All resource nodes in the world"
+    },
+    "stats": {
+      "$ref": "#/$defs/WorldStats"
+    }
+  },
+  "$defs": {
+    "WorldConfig": {
+      "type": "object",
+      "required": ["starting_year", "agent_count", "climate_severity", "resource_density"],
+      "properties": {
+        "starting_year": { "type": "integer" },
+        "agent_count": { "type": "integer", "minimum": 0 },
+        "climate_severity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "resource_density": { "type": "number", "minimum": 0, "maximum": 1 },
+        "ticks_per_second": { "type": "integer", "minimum": 1 },
+        "world_width": { "type": "number", "minimum": 0 },
+        "world_height": { "type": "number", "minimum": 0 }
+      }
+    },
+    "Agent": {
+      "type": "object",
+      "required": ["id", "position", "network", "memory", "alive", "age", "generation", "health"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "position": { "$ref": "#/$defs/Vec2" },
+        "network": { "$ref": "#/$defs/NeuralNetwork" },
+        "memory": { "$ref": "#/$defs/AgentMemory" },
+        "alive": { "type": "boolean" },
+        "age": { "type": "integer", "minimum": 0 },
+        "generation": { "type": "integer", "minimum": 0 },
+        "parents": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "array", "items": { "type": "string", "format": "uuid" }, "minItems": 2, "maxItems": 2 }
+          ]
+        },
+        "health": { "type": "number", "minimum": 0, "maximum": 1 },
+        "metabolism": { "type": "number", "minimum": 0 },
+        "speed": { "type": "number", "minimum": 0 }
+      }
+    },
+    "Vec2": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "NeuralNetwork": {
+      "type": "object",
+      "required": ["layers", "plasticity"],
+      "properties": {
+        "layers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DenseLayer" }
+        },
+        "plasticity": { "$ref": "#/$defs/PlasticityConfig" }
+      }
+    },
+    "DenseLayer": {
+      "type": "object",
+      "required": ["weights", "biases", "input_size", "output_size", "activation"],
+      "properties": {
+        "weights": { "type": "array", "items": { "type": "number" } },
+        "biases": { "type": "array", "items": { "type": "number" } },
+        "input_size": { "type": "integer", "minimum": 1 },
+        "output_size": { "type": "integer", "minimum": 1 },
+        "activation": { "type": "string", "enum": ["ReLU", "Sigmoid", "Tanh", "Linear", "LeakyReLU"] }
+      }
+    },
+    "PlasticityConfig": {
+      "type": "object",
+      "required": ["rule", "learning_rate"],
+      "properties": {
+        "rule": { "type": "string", "enum": ["Hebbian", "RewardModulated", "Evolutionary"] },
+        "learning_rate": { "type": "number", "minimum": 0 },
+        "weight_decay": { "type": "number", "minimum": 0 },
+        "momentum": { "type": "number", "minimum": 0, "maximum": 1 },
+        "clip_range": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "AgentMemory": {
+      "$ref": "agent_memory.schema.json"
+    },
+    "ResourceNode": {
+      "type": "object",
+      "required": ["id", "position", "resource_type", "amount", "max_amount"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "position": { "$ref": "#/$defs/Vec2" },
+        "resource_type": { "type": "string", "enum": ["Food", "Water", "Shelter", "Material"] },
+        "amount": { "type": "number", "minimum": 0 },
+        "max_amount": { "type": "number", "minimum": 0 },
+        "regen_rate": { "type": "number", "minimum": 0 },
+        "permanent": { "type": "boolean" }
+      }
+    },
+    "WorldStats": {
+      "type": "object",
+      "properties": {
+        "total_agents_spawned": { "type": "integer", "minimum": 0 },
+        "total_deaths": { "type": "integer", "minimum": 0 },
+        "total_births": { "type": "integer", "minimum": 0 },
+        "total_resources_gathered": { "type": "integer", "minimum": 0 },
+        "current_population": { "type": "integer", "minimum": 0 },
+        "average_fitness": { "type": "number" },
+        "max_generation": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
