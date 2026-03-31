@@ -18,14 +18,14 @@ A Rust-based **Humanity Simulator** where thousands of agents perceive their env
 # Build the project
 cargo build --release
 
+# Run GUI version (recomended)
+cargo run --release --bin reality-sim-gui
+
 # Run CLI with defaults (10,000 BCE, 1000 agents)
 cargo run --release
 
 # Custom configuration
 cargo run --release -- --year -5000 --agents 5000 --climate 0.7 --resources 0.3
-
-# Run GUI version
-cargo run --release --bin reality-sim-gui
 ```
 
 ## GUI Features
