@@ -1,13 +1,21 @@
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use uuid::Uuid;
 
-use crate::agent::Stimuli;
+use crate::agent::{Action, Agent, Stimuli, Vec2};
 use crate::config::WorldConfig;
-use crate::world::WorldState;
+use crate::world::{ResourceType, WorldState};
 
 use super::scheduler::BatchScheduler;
 use super::time::TimeManager;
+
+/// Request for gathering resources (collected during parallel phase)
+struct GatherRequest {
+    agent_id: Uuid,
+    position: Vec2,
+    intensity: f32,
+}
 
 /// Main simulation runner
 pub struct SimulationRunner {
@@ -16,6 +24,8 @@ pub struct SimulationRunner {
     pub scheduler: BatchScheduler,
     pub running: Arc<AtomicBool>,
     pub paused: Arc<AtomicBool>,
+    /// Reproduction cooldowns (agent_id -> tick when can reproduce again)
+    reproduction_cooldowns: std::collections::HashMap<Uuid, u64>,
 }
 
 impl SimulationRunner {
@@ -30,6 +40,7 @@ impl SimulationRunner {
             scheduler,
             running: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
+            reproduction_cooldowns: std::collections::HashMap::new(),
         }
     }
 
@@ -46,10 +57,22 @@ impl SimulationRunner {
         // Phase 3: Action - Execute actions and interactions
         self.execute_actions(delta_time);
 
-        // Phase 4: World update
+        // Phase 4: Gathering - Process resource gathering
+        self.process_gathering();
+
+        // Phase 5: Reproduction - Create offspring
+        self.process_reproduction();
+
+        // Phase 6: Communication - Knowledge sharing
+        self.process_communication();
+
+        // Phase 7: Building - Create shelter structures
+        self.process_building();
+
+        // Phase 8: World update
         self.update_world(delta_time);
 
-        // Phase 5: Learning - Apply rewards
+        // Phase 9: Learning - Apply rewards
         self.apply_learning();
 
         // Advance simulation time
@@ -192,6 +215,295 @@ impl SimulationRunner {
                 agent.learn(reward);
             }
         });
+    }
+
+    /// Process resource gathering for all agents
+    fn process_gathering(&mut self) {
+        const GATHER_RADIUS: f32 = 30.0;
+        const GATHER_AMOUNT: f32 = 5.0;
+
+        // Collect gather requests from agents
+        let gather_requests: Vec<GatherRequest> = self.world.agents.par_iter()
+            .filter_map(|agent_lock| {
+                let agent = agent_lock.read();
+                if !agent.alive {
+                    return None;
+                }
+                
+                // Check if agent wants to gather (using cached action)
+                if agent.last_action.primary_action() == Action::Gather {
+                    Some(GatherRequest {
+                        agent_id: agent.id,
+                        position: agent.position,
+                        intensity: agent.last_action.gather_intensity,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Process each gather request (sequential to avoid resource conflicts)
+        for request in gather_requests {
+            // Find nearest resource
+            let mut best_resource_idx: Option<usize> = None;
+            let mut best_dist = f32::MAX;
+
+            for (idx, resource) in self.world.resources.iter().enumerate() {
+                if resource.amount <= 0.0 {
+                    continue;
+                }
+                let dist = request.position.distance(&resource.position);
+                if dist < GATHER_RADIUS && dist < best_dist {
+                    best_dist = dist;
+                    best_resource_idx = Some(idx);
+                }
+            }
+
+            if let Some(resource_idx) = best_resource_idx {
+                let gather_amount = GATHER_AMOUNT * request.intensity;
+                let resource = &mut self.world.resources[resource_idx];
+                let gathered = resource.gather(gather_amount);
+
+                // Apply gathered resource to agent
+                if let Some(agent_lock) = self.world.agents.iter()
+                    .find(|a| a.read().id == request.agent_id)
+                {
+                    let mut agent = agent_lock.write();
+                    match gathered.resource_type {
+                        ResourceType::Food => {
+                            agent.stimuli.hunger = (agent.stimuli.hunger - gathered.amount * 0.02).max(0.0);
+                            agent.health = (agent.health + gathered.amount * 0.005).min(1.0);
+                        }
+                        ResourceType::Water => {
+                            agent.stimuli.thirst = (agent.stimuli.thirst - gathered.amount * 0.03).max(0.0);
+                        }
+                        ResourceType::Shelter => {
+                            // Shelter provides protection, reduces fear
+                            agent.stimuli.fear = (agent.stimuli.fear - 0.1).max(0.0);
+                        }
+                        ResourceType::Material => {
+                            // Materials are for building (handled elsewhere)
+                            agent.stimuli.energy = (agent.stimuli.energy + 0.05).min(1.0);
+                        }
+                    }
+                    self.world.stats.total_resources_gathered += 1;
+                }
+            }
+        }
+    }
+
+    /// Process reproduction between willing agents
+    fn process_reproduction(&mut self) {
+        const REPRODUCTION_RADIUS: f32 = 20.0;
+        const REPRODUCTION_THRESHOLD: f32 = 0.6;
+        const REPRODUCTION_COOLDOWN: u64 = 500; // Ticks between reproductions
+
+        let tick = self.world.tick;
+
+        // Clean up old cooldowns
+        self.reproduction_cooldowns.retain(|_, cooldown_tick| *cooldown_tick > tick);
+
+        // Find agents wanting to reproduce
+        let mut reproduction_candidates: Vec<(Uuid, Vec2, f32)> = Vec::new();
+        
+        for agent_lock in &self.world.agents {
+            let agent = agent_lock.read();
+            if !agent.alive || agent.health < 0.5 {
+                continue;
+            }
+            
+            // Check cooldown
+            if self.reproduction_cooldowns.contains_key(&agent.id) {
+                continue;
+            }
+
+            // Use cached action
+            if agent.last_action.reproduction_desire > REPRODUCTION_THRESHOLD {
+                reproduction_candidates.push((agent.id, agent.position, agent.last_action.reproduction_desire));
+            }
+        }
+
+        // Match pairs for reproduction
+        let mut used_agents: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+        let mut new_agents: Vec<Agent> = Vec::new();
+
+        for i in 0..reproduction_candidates.len() {
+            let (id_a, pos_a, _) = reproduction_candidates[i];
+            if used_agents.contains(&id_a) {
+                continue;
+            }
+
+            // Find nearest compatible partner
+            for j in (i + 1)..reproduction_candidates.len() {
+                let (id_b, pos_b, _) = reproduction_candidates[j];
+                if used_agents.contains(&id_b) {
+                    continue;
+                }
+
+                let dist = pos_a.distance(&pos_b);
+                if dist < REPRODUCTION_RADIUS {
+                    // Create offspring
+                    let parent_a = self.world.agents.iter()
+                        .find(|a| a.read().id == id_a)
+                        .map(|a| a.read().clone());
+                    let parent_b = self.world.agents.iter()
+                        .find(|a| a.read().id == id_b)
+                        .map(|a| a.read().clone());
+
+                    if let (Some(pa), Some(pb)) = (parent_a, parent_b) {
+                        let child_pos = Vec2::new(
+                            (pos_a.x + pos_b.x) / 2.0,
+                            (pos_a.y + pos_b.y) / 2.0,
+                        );
+                        let child = Agent::from_parents(&pa, &pb, child_pos);
+                        new_agents.push(child);
+
+                        // Mark parents as used and on cooldown
+                        used_agents.insert(id_a);
+                        used_agents.insert(id_b);
+                        self.reproduction_cooldowns.insert(id_a, tick + REPRODUCTION_COOLDOWN);
+                        self.reproduction_cooldowns.insert(id_b, tick + REPRODUCTION_COOLDOWN);
+
+                        self.world.stats.total_births += 1;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Add new agents to world
+        for child in new_agents {
+            self.world.add_agent(child);
+        }
+    }
+
+    /// Process communication between nearby agents
+    fn process_communication(&mut self) {
+        const COMMUNICATION_RADIUS: f32 = 40.0;
+        const COMMUNICATION_THRESHOLD: f32 = 0.5;
+
+        // Collect communication requests
+        let mut communicators: Vec<(Uuid, Vec2, f32)> = Vec::new();
+        
+        for agent_lock in &self.world.agents {
+            let agent = agent_lock.read();
+            if !agent.alive {
+                continue;
+            }
+
+            // Use cached action
+            if agent.last_action.primary_action() == Action::Communicate 
+                && agent.last_action.communication_signal.abs() > COMMUNICATION_THRESHOLD 
+            {
+                communicators.push((agent.id, agent.position, agent.last_action.communication_signal));
+            }
+        }
+
+        // Process communication pairs
+        for i in 0..communicators.len() {
+            let (id_a, pos_a, signal_a) = communicators[i];
+
+            for j in (i + 1)..communicators.len() {
+                let (id_b, pos_b, signal_b) = communicators[j];
+
+                let dist = pos_a.distance(&pos_b);
+                if dist < COMMUNICATION_RADIUS {
+                    // Similar signals = cooperative communication
+                    let signal_similarity = 1.0 - (signal_a - signal_b).abs() / 2.0;
+                    
+                    if signal_similarity > 0.5 {
+                        // Share knowledge between agents
+                        let knowledge_a = self.world.agents.iter()
+                            .find(|a| a.read().id == id_a)
+                            .map(|a| a.read().export_knowledge());
+                        let knowledge_b = self.world.agents.iter()
+                            .find(|a| a.read().id == id_b)
+                            .map(|a| a.read().export_knowledge());
+
+                        if let (Some(ka), Some(kb)) = (knowledge_a, knowledge_b) {
+                            // Blend knowledge
+                            let blend_factor = signal_similarity * 0.1; // Small influence
+                            
+                            if let Some(agent_a) = self.world.agents.iter()
+                                .find(|a| a.read().id == id_a)
+                            {
+                                let blended: Vec<f32> = ka.iter().zip(kb.iter())
+                                    .map(|(a, b)| a * (1.0 - blend_factor) + b * blend_factor)
+                                    .collect();
+                                agent_a.write().import_knowledge(&blended);
+                            }
+                            
+                            if let Some(agent_b) = self.world.agents.iter()
+                                .find(|a| a.read().id == id_b)
+                            {
+                                let blended: Vec<f32> = kb.iter().zip(ka.iter())
+                                    .map(|(b, a)| b * (1.0 - blend_factor) + a * blend_factor)
+                                    .collect();
+                                agent_b.write().import_knowledge(&blended);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Process building actions - create shelter structures
+    fn process_building(&mut self) {
+        const BUILD_THRESHOLD: f32 = 0.6;
+        const BUILD_ENERGY_COST: f32 = 0.2;
+        const SHELTER_AMOUNT: f32 = 50.0;
+
+        // Only allow building in Medieval+ eras
+        let era_factor = match self.world.era {
+            crate::config::Era::Prehistoric => 0.0,
+            crate::config::Era::Ancient => 0.33,
+            crate::config::Era::Medieval => 0.66,
+            crate::config::Era::Modern => 1.0,
+        };
+
+        if era_factor < 0.5 {
+            return; // Building not available in early eras
+        }
+
+        // Collect build requests
+        let mut build_requests: Vec<(Uuid, Vec2)> = Vec::new();
+
+        for agent_lock in &self.world.agents {
+            let agent = agent_lock.read();
+            if !agent.alive {
+                continue;
+            }
+
+            // Check if agent wants to build and has energy
+            if agent.last_action.primary_action() == Action::Build 
+                && agent.last_action.build_desire > BUILD_THRESHOLD
+                && agent.stimuli.energy > BUILD_ENERGY_COST
+            {
+                build_requests.push((agent.id, agent.position));
+            }
+        }
+
+        // Process build requests (limit to prevent spam)
+        let max_builds_per_tick = 3;
+        for (idx, (agent_id, position)) in build_requests.into_iter().enumerate() {
+            if idx >= max_builds_per_tick {
+                break;
+            }
+
+            // Deduct energy from builder
+            if let Some(agent_lock) = self.world.agents.iter()
+                .find(|a| a.read().id == agent_id)
+            {
+                let mut agent = agent_lock.write();
+                agent.stimuli.energy -= BUILD_ENERGY_COST;
+            }
+
+            // Create shelter at agent's position
+            let shelter = crate::world::ResourceNode::shelter(position, SHELTER_AMOUNT * era_factor);
+            self.world.resources.push(shelter);
+        }
     }
 
     /// Spawn new resources

@@ -289,167 +289,171 @@ impl SimulatorApp {
     /// Render the main menu
     fn render_main_menu(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(40.0);
-                
-                // Title
-                ui.heading(egui::RichText::new("🌍 REALITY SIMULATOR")
-                    .size(48.0)
-                    .color(egui::Color32::from_rgb(100, 200, 255)));
-                ui.add_space(10.0);
-                ui.label(egui::RichText::new("A Neural Network Humanity Simulation")
-                    .size(18.0)
-                    .color(egui::Color32::GRAY));
-                ui.add_space(40.0);
-
-                // Main content in two columns
-                ui.horizontal(|ui| {
-                    ui.add_space((ui.available_width() - 900.0) / 2.0);
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(20.0);
                     
-                    // Left side - Presets
-                    egui::Frame::dark_canvas(ui.style())
-                        .inner_margin(20.0)
-                        .show(ui, |ui| {
-                            ui.set_width(280.0);
-                            ui.heading("📋 Presets");
-                            ui.add_space(10.0);
-                            
-                            let presets = [
-                                ("Dawn of Humanity", "100 agents, harsh survival"),
-                                ("Prehistoric Era", "500 agents, balanced start"),
-                                ("Ancient Civilizations", "2000 agents, fertile lands"),
-                                ("Medieval Period", "5000 agents, established world"),
-                                ("Massive Scale", "10000 agents, stress test"),
-                                ("Survival Mode", "200 agents, extreme difficulty"),
-                            ];
-                            
-                            for (name, desc) in presets {
-                                let selected = self.selected_preset == name;
-                                if ui.selectable_label(selected, egui::RichText::new(name).size(16.0)).clicked() {
-                                    self.apply_preset(name);
-                                }
-                                ui.label(egui::RichText::new(desc).size(12.0).color(egui::Color32::GRAY));
-                                ui.add_space(5.0);
-                            }
-                        });
+                    // Title - responsive font size
+                    let title_size = if ui.available_width() < 500.0 { 28.0 } else { 42.0 };
+                    ui.heading(egui::RichText::new("🌍 REALITY SIMULATOR")
+                        .size(title_size)
+                        .color(egui::Color32::from_rgb(100, 200, 255)));
+                    ui.add_space(5.0);
+                    ui.label(egui::RichText::new("A Neural Network Humanity Simulation")
+                        .size(14.0)
+                        .color(egui::Color32::GRAY));
+                    ui.add_space(20.0);
+
+                    let available_width = ui.available_width();
+                    let panel_width = (available_width - 40.0).min(500.0);
+                    
+                    // Always vertical layout - presets then config
+                    self.render_presets_panel(ui, panel_width);
+                    ui.add_space(15.0);
+                    self.render_config_panel(ui, panel_width);
                     
                     ui.add_space(20.0);
                     
-                    // Right side - Configuration
-                    egui::Frame::dark_canvas(ui.style())
-                        .inner_margin(20.0)
-                        .show(ui, |ui| {
-                            ui.set_width(560.0);
-                            ui.heading("⚙️ Configuration");
-                            ui.add_space(10.0);
-                            
-                            ui.horizontal(|ui| {
-                                // Column 1
-                                ui.vertical(|ui| {
-                                    ui.set_width(260.0);
-                                    
-                                    ui.label("Starting Year");
-                                    let year_suffix = if self.menu_config.starting_year < 0 { " BCE" } else { " CE" };
-                                    ui.add(egui::Slider::new(&mut self.menu_config.starting_year, -100000..=2000)
-                                        .suffix(year_suffix));
-                                    
-                                    ui.add_space(8.0);
-                                    ui.label("Initial Agents");
-                                    ui.add(egui::Slider::new(&mut self.menu_config.agent_count, 10..=50000)
-                                        .logarithmic(true));
-                                    
-                                    ui.add_space(8.0);
-                                    ui.label("Number of Factions");
-                                    ui.add(egui::Slider::new(&mut self.menu_config.faction_count, 2..=12));
-                                    
-                                    ui.add_space(8.0);
-                                    ui.label("Climate Severity");
-                                    ui.add(egui::Slider::new(&mut self.menu_config.climate_severity, 0.0..=1.0)
-                                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
-                                    
-                                    ui.add_space(8.0);
-                                    ui.label("Resource Density");
-                                    ui.add(egui::Slider::new(&mut self.menu_config.resource_density, 0.0..=1.0)
-                                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
-                                });
-                                
-                                ui.add_space(20.0);
-                                
-                                // Column 2
-                                ui.vertical(|ui| {
-                                    ui.set_width(260.0);
-                                    
-                                    ui.label("World Width");
-                                    ui.add(egui::Slider::new(&mut self.menu_config.world_width, 400.0..=3000.0)
-                                        .suffix(" px"));
-                                    
-                                    ui.add_space(8.0);
-                                    ui.label("World Height");
-                                    ui.add(egui::Slider::new(&mut self.menu_config.world_height, 300.0..=2000.0)
-                                        .suffix(" px"));
-                                    
-                                    ui.add_space(8.0);
-                                    ui.label("Mutation Rate");
-                                    ui.add(egui::Slider::new(&mut self.menu_config.mutation_rate, 0.0..=0.5)
-                                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
-                                    
-                                    ui.add_space(8.0);
-                                    ui.label("Reproduction Threshold");
-                                    ui.add(egui::Slider::new(&mut self.menu_config.reproduction_threshold, 0.3..=1.0)
-                                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
-                                    
-                                    ui.add_space(8.0);
-                                    ui.label("Max Agent Age (ticks)");
-                                    ui.add(egui::Slider::new(&mut self.menu_config.max_agent_age, 1000..=50000)
-                                        .logarithmic(true));
-                                });
-                            });
-                            
-                            ui.add_space(15.0);
-                            ui.separator();
-                            ui.add_space(10.0);
-                            
-                            // Advanced options
-                            ui.horizontal(|ui| {
-                                ui.checkbox(&mut self.menu_config.day_night_cycle, "Day/Night Cycle");
-                                ui.add_space(30.0);
-                                ui.checkbox(&mut self.menu_config.natural_disasters, "Natural Disasters");
-                            });
-                        });
+                    // Start button
+                    let button_width = panel_width.min(300.0);
+                    let start_button = egui::Button::new(
+                        egui::RichText::new("▶  START SIMULATION")
+                            .size(18.0)
+                            .color(egui::Color32::WHITE)
+                    )
+                    .min_size(egui::vec2(button_width, 40.0))
+                    .fill(egui::Color32::from_rgb(40, 120, 80));
+                    
+                    if ui.add(start_button).clicked() {
+                        self.start_simulation();
+                    }
+                    
+                    ui.add_space(15.0);
+                    
+                    // Footer info
+                    ui.label(egui::RichText::new(format!(
+                        "{} agents | {} factions | {} | {:.0}% climate",
+                        self.menu_config.agent_count,
+                        self.menu_config.faction_count,
+                        if self.menu_config.starting_year < 0 {
+                            format!("{} BCE", -self.menu_config.starting_year)
+                        } else {
+                            format!("{} CE", self.menu_config.starting_year)
+                        },
+                        self.menu_config.climate_severity * 100.0
+                    )).size(11.0).color(egui::Color32::GRAY));
+                    
+                    ui.add_space(10.0);
                 });
-                
-                ui.add_space(30.0);
-                
-                // Start button
-                let start_button = egui::Button::new(
-                    egui::RichText::new("▶  START SIMULATION")
-                        .size(24.0)
-                        .color(egui::Color32::WHITE)
-                )
-                .min_size(egui::vec2(300.0, 50.0))
-                .fill(egui::Color32::from_rgb(40, 120, 80));
-                
-                if ui.add(start_button).clicked() {
-                    self.start_simulation();
-                }
-                
-                ui.add_space(20.0);
-                
-                // Footer info
-                ui.label(egui::RichText::new(format!(
-                    "Config: {} agents | {} factions | Year {} | {:.0}% climate | {:.0}% resources",
-                    self.menu_config.agent_count,
-                    self.menu_config.faction_count,
-                    if self.menu_config.starting_year < 0 {
-                        format!("{} BCE", -self.menu_config.starting_year)
-                    } else {
-                        format!("{} CE", self.menu_config.starting_year)
-                    },
-                    self.menu_config.climate_severity * 100.0,
-                    self.menu_config.resource_density * 100.0
-                )).size(14.0).color(egui::Color32::GRAY));
             });
         });
+    }
+
+    /// Render presets panel
+    fn render_presets_panel(&mut self, ui: &mut egui::Ui, width: f32) {
+        egui::Frame::dark_canvas(ui.style())
+            .inner_margin(15.0)
+            .show(ui, |ui| {
+                ui.set_width(width);
+                ui.heading("📋 Presets");
+                ui.add_space(8.0);
+                
+                let presets = [
+                    ("Dawn of Humanity", "100 agents, harsh survival"),
+                    ("Prehistoric Era", "500 agents, balanced start"),
+                    ("Ancient Civilizations", "2000 agents, fertile lands"),
+                    ("Medieval Period", "5000 agents, established world"),
+                    ("Massive Scale", "10000 agents, stress test"),
+                    ("Survival Mode", "200 agents, extreme difficulty"),
+                ];
+                
+                for (name, desc) in presets {
+                    let selected = self.selected_preset == name;
+                    if ui.selectable_label(selected, egui::RichText::new(name).size(14.0)).clicked() {
+                        self.apply_preset(name);
+                    }
+                    ui.label(egui::RichText::new(desc).size(11.0).color(egui::Color32::GRAY));
+                    ui.add_space(3.0);
+                }
+            });
+    }
+
+    /// Render configuration panel - always vertical layout
+    fn render_config_panel(&mut self, ui: &mut egui::Ui, width: f32) {
+        egui::Frame::dark_canvas(ui.style())
+            .inner_margin(15.0)
+            .show(ui, |ui| {
+                ui.set_width(width);
+                ui.heading("⚙️ Configuration");
+                ui.add_space(8.0);
+                
+                // Always use single column (vertical) layout
+                self.render_config_column_1(ui);
+                ui.add_space(8.0);
+                self.render_config_column_2(ui);
+                
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(8.0);
+                
+                // Advanced options - always vertical
+                ui.checkbox(&mut self.menu_config.day_night_cycle, "Day/Night Cycle");
+                ui.checkbox(&mut self.menu_config.natural_disasters, "Natural Disasters");
+            });
+    }
+
+    /// Render first column of configuration options
+    fn render_config_column_1(&mut self, ui: &mut egui::Ui) {
+        ui.label("Starting Year");
+        let year_suffix = if self.menu_config.starting_year < 0 { " BCE" } else { " CE" };
+        ui.add(egui::Slider::new(&mut self.menu_config.starting_year, -100000..=2000)
+            .suffix(year_suffix));
+        
+        ui.add_space(6.0);
+        ui.label("Initial Agents");
+        ui.add(egui::Slider::new(&mut self.menu_config.agent_count, 10..=50000)
+            .logarithmic(true));
+        
+        ui.add_space(6.0);
+        ui.label("Number of Factions");
+        ui.add(egui::Slider::new(&mut self.menu_config.faction_count, 2..=12));
+        
+        ui.add_space(6.0);
+        ui.label("Climate Severity");
+        ui.add(egui::Slider::new(&mut self.menu_config.climate_severity, 0.0..=1.0)
+            .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
+        
+        ui.add_space(6.0);
+        ui.label("Resource Density");
+        ui.add(egui::Slider::new(&mut self.menu_config.resource_density, 0.0..=1.0)
+            .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
+    }
+
+    /// Render second column of configuration options
+    fn render_config_column_2(&mut self, ui: &mut egui::Ui) {
+        ui.label("World Width");
+        ui.add(egui::Slider::new(&mut self.menu_config.world_width, 400.0..=3000.0)
+            .suffix(" px"));
+        
+        ui.add_space(6.0);
+        ui.label("World Height");
+        ui.add(egui::Slider::new(&mut self.menu_config.world_height, 300.0..=2000.0)
+            .suffix(" px"));
+        
+        ui.add_space(6.0);
+        ui.label("Mutation Rate");
+        ui.add(egui::Slider::new(&mut self.menu_config.mutation_rate, 0.0..=0.5)
+            .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
+        
+        ui.add_space(6.0);
+        ui.label("Reproduction Threshold");
+        ui.add(egui::Slider::new(&mut self.menu_config.reproduction_threshold, 0.3..=1.0)
+            .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)));
+        
+        ui.add_space(6.0);
+        ui.label("Max Agent Age (ticks)");
+        ui.add(egui::Slider::new(&mut self.menu_config.max_agent_age, 1000..=50000)
+            .logarithmic(true));
     }
 
     /// Render the simulation view
@@ -489,25 +493,31 @@ impl SimulatorApp {
             });
         });
 
-        // Left panel - Controls and Stats
+        // Left panel - Controls and Stats with scroll
         egui::SidePanel::left("left_panel")
             .resizable(true)
             .default_width(280.0)
+            .min_width(200.0)
             .show(ctx, |ui| {
-                panels::controls_panel(ui, self);
-                ui.separator();
-                panels::stats_panel(ui, self);
-                ui.separator();
-                panels::factions_panel(ui, self);
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    panels::controls_panel(ui, self);
+                    ui.separator();
+                    panels::stats_panel(ui, self);
+                    ui.separator();
+                    panels::factions_panel(ui, self);
+                });
             });
 
-        // Right panel - Agent inspector (if selected)
+        // Right panel - Agent inspector (if selected) with scroll
         if self.selected_agent.is_some() {
             egui::SidePanel::right("agent_panel")
                 .resizable(true)
                 .default_width(250.0)
+                .min_width(180.0)
                 .show(ctx, |ui| {
-                    panels::agent_panel(ui, self);
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        panels::agent_panel(ui, self);
+                    });
                 });
         }
 

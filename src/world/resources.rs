@@ -69,6 +69,19 @@ impl ResourceNode {
         }
     }
 
+    /// Create a shelter resource node (built by agents)
+    pub fn shelter(position: Vec2, amount: f32) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            position,
+            resource_type: ResourceType::Shelter,
+            amount,
+            max_amount: amount,
+            regen_rate: 0.0, // Built structures don't regenerate
+            permanent: true, // Shelters persist
+        }
+    }
+
     /// Create a random resource node
     pub fn random(position: Vec2) -> Self {
         let mut rng = rand::thread_rng();

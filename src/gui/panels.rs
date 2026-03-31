@@ -201,47 +201,69 @@ pub fn agent_panel(ui: &mut egui::Ui, app: &mut SimulatorApp) {
     }
 }
 
-/// Graphs panel
+/// Graphs panel - responsive layout with vertical stacking on narrow screens
 pub fn graphs_panel(ui: &mut egui::Ui, app: &SimulatorApp) {
-    ui.horizontal(|ui| {
-        // Population graph
-        ui.group(|ui| {
-            ui.label("Population");
-            let points: egui_plot::PlotPoints = app.population_history.iter()
-                .enumerate()
-                .map(|(i, &v)| [i as f64, v as f64])
-                .collect();
-            let line = egui_plot::Line::new(points).color(egui::Color32::from_rgb(46, 134, 193));
-            
-            egui_plot::Plot::new("population_plot")
-                .height(100.0)
-                .width(ui.available_width() / 2.0 - 20.0)
-                .show_axes(true)
-                .allow_drag(false)
-                .allow_zoom(false)
-                .show(ui, |plot_ui| {
-                    plot_ui.line(line);
-                });
-        });
+    let available_width = ui.available_width();
+    let use_vertical = available_width < 500.0;
+    
+    egui::ScrollArea::horizontal().show(ui, |ui| {
+        if use_vertical {
+            // Vertical layout for narrow screens
+            ui.vertical(|ui| {
+                render_population_graph(ui, app, available_width - 20.0);
+                ui.add_space(10.0);
+                render_fitness_graph(ui, app, available_width - 20.0);
+            });
+        } else {
+            // Horizontal layout for wide screens
+            ui.horizontal(|ui| {
+                let graph_width = (available_width / 2.0 - 25.0).max(150.0);
+                render_population_graph(ui, app, graph_width);
+                ui.add_space(10.0);
+                render_fitness_graph(ui, app, graph_width);
+            });
+        }
+    });
+}
 
-        // Fitness graph
-        ui.group(|ui| {
-            ui.label("Average Fitness");
-            let points: egui_plot::PlotPoints = app.fitness_history.iter()
-                .enumerate()
-                .map(|(i, &v)| [i as f64, v as f64])
-                .collect();
-            let line = egui_plot::Line::new(points).color(egui::Color32::from_rgb(39, 174, 96));
-            
-            egui_plot::Plot::new("fitness_plot")
-                .height(100.0)
-                .width(ui.available_width() - 10.0)
-                .show_axes(true)
-                .allow_drag(false)
-                .allow_zoom(false)
-                .show(ui, |plot_ui| {
-                    plot_ui.line(line);
-                });
-        });
+fn render_population_graph(ui: &mut egui::Ui, app: &SimulatorApp, width: f32) {
+    ui.group(|ui| {
+        ui.label("Population");
+        let points: egui_plot::PlotPoints = app.population_history.iter()
+            .enumerate()
+            .map(|(i, &v)| [i as f64, v as f64])
+            .collect();
+        let line = egui_plot::Line::new(points).color(egui::Color32::from_rgb(46, 134, 193));
+        
+        egui_plot::Plot::new("population_plot")
+            .height(80.0)
+            .width(width)
+            .show_axes(true)
+            .allow_drag(false)
+            .allow_zoom(false)
+            .show(ui, |plot_ui| {
+                plot_ui.line(line);
+            });
+    });
+}
+
+fn render_fitness_graph(ui: &mut egui::Ui, app: &SimulatorApp, width: f32) {
+    ui.group(|ui| {
+        ui.label("Average Fitness");
+        let points: egui_plot::PlotPoints = app.fitness_history.iter()
+            .enumerate()
+            .map(|(i, &v)| [i as f64, v as f64])
+            .collect();
+        let line = egui_plot::Line::new(points).color(egui::Color32::from_rgb(39, 174, 96));
+        
+        egui_plot::Plot::new("fitness_plot")
+            .height(80.0)
+            .width(width)
+            .show_axes(true)
+            .allow_drag(false)
+            .allow_zoom(false)
+            .show(ui, |plot_ui| {
+                plot_ui.line(line);
+            });
     });
 }

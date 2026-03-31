@@ -70,6 +70,9 @@ pub struct Agent {
     pub speed: f32,
     /// Faction index (for visualization and grouping)
     pub faction: usize,
+    /// Cached action output from last think() call
+    #[serde(skip)]
+    pub last_action: ActionOutput,
 }
 
 impl Agent {
@@ -90,33 +93,73 @@ impl Agent {
             metabolism: 1.0,
             speed: 1.0,
             faction: 0,
+            last_action: ActionOutput::default(),
         }
     }
 
-    /// Create a new agent with faction assignment
+    /// Create a new agent with randomized initial state
+    pub fn new_randomized(position: Vec2) -> Self {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let id = Uuid::new_v4();
+        
+        let mut stimuli = Stimuli::default();
+        stimuli.hunger = rng.gen_range(0.0..0.3);
+        stimuli.thirst = rng.gen_range(0.0..0.3);
+        stimuli.energy = rng.gen_range(0.7..1.0);
+        
+        Self {
+            id,
+            position,
+            network: NeuralNetwork::new_agent_network(),
+            stimuli,
+            memory: AgentMemory::new(id),
+            alive: true,
+            age: 0,
+            generation: 0,
+            parents: None,
+            health: rng.gen_range(0.9..1.0),
+            metabolism: rng.gen_range(0.8..1.2), // ±20% variation
+            speed: rng.gen_range(0.9..1.1),
+            faction: 0,
+            last_action: ActionOutput::default(),
+        }
+    }
+
+    /// Create a new agent with faction assignment and randomized state
     pub fn new_with_faction(position: Vec2, faction: usize) -> Self {
-        let mut agent = Self::new(position);
+        let mut agent = Self::new_randomized(position);
         agent.faction = faction;
         agent
     }
 
     /// Create agent from parent(s) with inherited traits
     pub fn from_parents(parent_a: &Agent, parent_b: &Agent, position: Vec2) -> Self {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
         let id = Uuid::new_v4();
+        
+        // Randomize initial needs for offspring too
+        let mut stimuli = Stimuli::default();
+        stimuli.hunger = rng.gen_range(0.0..0.2);
+        stimuli.thirst = rng.gen_range(0.0..0.2);
+        stimuli.energy = rng.gen_range(0.8..1.0);
+        
         let mut child = Self {
             id,
             position,
             network: parent_a.network.crossover(&parent_b.network, 0.5),
-            stimuli: Stimuli::default(),
+            stimuli,
             memory: AgentMemory::new(id),
             alive: true,
             age: 0,
             generation: parent_a.generation.max(parent_b.generation) + 1,
             parents: Some((parent_a.id, parent_b.id)),
             health: 1.0,
-            metabolism: (parent_a.metabolism + parent_b.metabolism) / 2.0,
-            speed: (parent_a.speed + parent_b.speed) / 2.0,
+            metabolism: (parent_a.metabolism + parent_b.metabolism) / 2.0 * rng.gen_range(0.9..1.1),
+            speed: (parent_a.speed + parent_b.speed) / 2.0 * rng.gen_range(0.9..1.1),
             faction: parent_a.faction, // Inherit faction from first parent
+            last_action: ActionOutput::default(),
         };
 
         // Apply mutation
@@ -130,15 +173,16 @@ impl Agent {
         self.stimuli.health = self.health;
     }
 
-    /// Process stimuli and decide on action
+    /// Process stimuli and decide on action (caches result in last_action)
     pub fn think(&mut self) -> ActionOutput {
         let inputs = self.stimuli.to_input_vector();
         let outputs = self.network.forward(&inputs);
-        ActionOutput::from_nn_output(&outputs)
+        self.last_action = ActionOutput::from_nn_output(&outputs);
+        self.last_action.clone()
     }
 
     /// Execute an action and get reward
-    pub fn act(&mut self, action: &ActionOutput, tick: u64) -> f32 {
+    pub fn act(&mut self, action: &ActionOutput, _tick: u64) -> f32 {
         let primary = action.primary_action();
         let mut reward = 0.0;
 
@@ -151,11 +195,16 @@ impl Agent {
             }
             Action::Rest => {
                 self.health = (self.health + 0.01).min(1.0);
+                self.stimuli.energy = (self.stimuli.energy + 0.02).min(1.0);
                 reward = 0.05;
             }
             Action::Gather => {
-                // Reward determined externally by world
+                // Reward determined externally by world in process_gathering()
                 reward = 0.0;
+            }
+            Action::Communicate => {
+                // Handled externally by world in process_communication()
+                reward = 0.01; // Small social reward
             }
             Action::Aggress => {
                 reward = -0.1; // Aggression has cost
@@ -166,7 +215,20 @@ impl Agent {
                 self.position.y += dy * self.speed * 1.5;
                 reward = -0.02;
             }
-            _ => {}
+            Action::Reproduce => {
+                // Handled externally by world in process_reproduction()
+                reward = 0.0;
+            }
+            Action::Build => {
+                // Building requires energy and is era-dependent
+                // Era factor > 0.5 means Medieval or Modern era
+                if self.stimuli.era_factor > 0.5 && self.stimuli.energy > 0.3 {
+                    self.stimuli.energy -= 0.1;
+                    reward = 0.1; // Building is productive
+                } else {
+                    reward = -0.05; // Failed build attempt
+                }
+            }
         }
 
         reward
