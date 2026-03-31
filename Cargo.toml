@@ -1,0 +1,43 @@
+[package]
+name = "reality-sim"
+version = "0.1.0"
+edition = "2021"
+description = "A Humanity Simulator with neural network agents"
+authors = ["Fkm"]
+
+[features]
+default = ["gui"]
+gui = ["eframe", "egui", "egui_plot"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rayon = "1.10"
+rand = "0.8"
+parking_lot = "0.12"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+clap = { version = "4.0", features = ["derive"] }
+
+# GUI dependencies
+eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow", "persistence"] }
+egui = { version = "0.31", optional = true }
+egui_plot = { version = "0.31", optional = true }
+
+[dev-dependencies]
+tempfile = "3.20"
+
+[[bin]]
+name = "reality-sim"
+path = "src/main.rs"
+
+[[bin]]
+name = "reality-sim-gui"
+path = "src/gui/main.rs"
+required-features = ["gui"]
+
+[profile.release]
+opt-level = 3
+lto = true
+
+[profile.dev]
+opt-level = 1
